@@ -79,13 +79,13 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Route to get Reddit links for authenticated user
+// Get all Reddit links for authenticated user
 app.get('/links', authenticateToken, (req, res) => {
   const username = req.user.username;
   res.json(userLinks[username] || []);
 });
 
-// Route to post a new Reddit link for authenticated user
+// Add a new Reddit link for authenticated user
 app.post('/links', authenticateToken, (req, res) => {
   const username = req.user.username;
   const { url } = req.body;
@@ -98,6 +98,20 @@ app.post('/links', authenticateToken, (req, res) => {
 
   userLinks[username].push(url);
   res.status(201).send('Link added');
+});
+
+// Delete a Reddit link for authenticated user
+app.delete('/links', authenticateToken, (req, res) => {
+  const username = req.user.username;
+  const { url } = req.body;
+
+  if (!url) return res.status(400).send('Missing URL');
+
+  if (!userLinks[username]) return res.status(404).send('No links found for user');
+
+  userLinks[username] = userLinks[username].filter(link => link !== url);
+
+  res.sendStatus(200);
 });
 
 app.listen(PORT, () => {

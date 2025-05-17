@@ -3,6 +3,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 dotenv.config();
 
@@ -30,8 +32,41 @@ const users = [
 
 console.log('Users loaded:', users);
 
-// In-memory storage for user links
-const userLinks = {}; // e.g. { "teo": ["https://reddit.com/..."], ... }
+// Path to your links.json file
+const LINKS_FILE = path.join(__dirname, 'links.json');
+
+// Shared links array (loaded from links.json)
+let sharedLinks = [];
+
+// Load links from links.json on server start
+function loadLinks() {
+  try {
+    if (fs.existsSync(LINKS_FILE)) {
+      const data = fs.readFileSync(LINKS_FILE, 'utf-8');
+      sharedLinks = JSON.parse(data);
+      console.log(`Loaded ${sharedLinks.length} links from links.json`);
+    } else {
+      sharedLinks = [];
+      console.log('links.json not found, starting with empty links array');
+    }
+  } catch (err) {
+    console.error('Error loading links.json:', err);
+    sharedLinks = [];
+  }
+}
+
+// Save current sharedLinks to links.json
+function saveLinks() {
+  try {
+    fs.writeFileSync(LINKS_FILE, JSON.stringify(sharedLinks, null, 2), 'utf-8');
+    console.log('links.json saved');
+  } catch (err) {
+    console.error('Error saving links.json:', err);
+  }
+}
+
+// Load links immediately on startup
+loadLinks();
 
 // Middleware to verify JWT
 function authenticateToken(req, res, next) {
@@ -47,7 +82,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Login route
+// Login route (unchanged)
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -79,37 +114,38 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Get all Reddit links for authenticated user
+// Get all links (shared)
 app.get('/links', authenticateToken, (req, res) => {
-  const username = req.user.username;
-  res.json(userLinks[username] || []);
+  res.json(sharedLinks);
 });
 
-// Add a new Reddit link for authenticated user
+// Add a new link (shared)
 app.post('/links', authenticateToken, (req, res) => {
-  const username = req.user.username;
   const { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
-  if (!userLinks[username]) {
-    userLinks[username] = [];
+  if (!sharedLinks.includes(url)) {
+    sharedLinks.push(url);
+    saveLinks();
   }
 
-  userLinks[username].push(url);
   res.status(201).send('Link added');
 });
 
-// Delete a Reddit link for authenticated user
+// Delete a link (shared)
 app.delete('/links', authenticateToken, (req, res) => {
-  const username = req.user.username;
   const { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
-  if (!userLinks[username]) return res.status(404).send('No links found for user');
+  const index = sharedLinks.indexOf(url);
+  if (index === -1) {
+    return res.status(404).send('Link not found');
+  }
 
-  userLinks[username] = userLinks[username].filter(link => link !== url);
+  sharedLinks.splice(index, 1);
+  saveLinks();
 
   res.sendStatus(200);
 });
@@ -117,3 +153,4 @@ app.delete('/links', authenticateToken, (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
+

@@ -27,6 +27,10 @@ const users = [
   {
     username: process.env.USER_2_USERNAME,
     passwordHash: bcrypt.hashSync(process.env.USER_2_PASSWORD, 10)
+  },
+  {
+    username: process.env.USER_3_USERNAME,
+    passwordHash: bcrypt.hashSync(process.env.USER_3_PASSWORD, 10)
   }
 ];
 

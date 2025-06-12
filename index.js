@@ -3,8 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 
 dotenv.config();
 
@@ -14,6 +13,13 @@ const SECRET_KEY = process.env.SECRET_KEY;
 
 app.use(express.json());
 app.use(cors());
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
 app.get('/', (req, res) => {
   res.send('Server is up and running!');
@@ -51,43 +57,6 @@ const users = [
 ];
 
 console.log('Users loaded:', users.map(u => u.username));
-
-// Path to your links.json file
-const LINKS_FILE = path.join(__dirname, 'links.json');
-
-// Shared links array (loaded from links.json)
-let sharedLinks = [];
-
-// Load links from links.json on server start
-function loadLinks() {
-  try {
-    if (fs.existsSync(LINKS_FILE)) {
-      const data = fs.readFileSync(LINKS_FILE, 'utf-8');
-      sharedLinks = JSON.parse(data);
-      console.log(`Loaded ${sharedLinks.length} links from links.json`);
-    } else {
-      sharedLinks = [];
-      console.log('links.json not found, starting with empty links array');
-    }
-  } catch (err) {
-    console.error('Error loading links.json:', err);
-    sharedLinks = [];
-  }
-}
-
-// Save current sharedLinks to links.json (async with callback to catch errors)
-function saveLinks() {
-  fs.writeFile(LINKS_FILE, JSON.stringify(sharedLinks, null, 2), 'utf-8', (err) => {
-    if (err) {
-      console.error('Error saving links.json:', err);
-    } else {
-      console.log('links.json saved successfully');
-    }
-  });
-}
-
-// Load links immediately on startup
-loadLinks();
 
 // Middleware to verify JWT
 function authenticateToken(req, res, next) {
@@ -135,58 +104,58 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Get all links (shared)
-app.get('/links', authenticateToken, (req, res) => {
-  res.json(sharedLinks);
+// Get all links (shared, public)
+app.get('/links', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT url FROM links ORDER BY created_at DESC');
+    const urls = result.rows.map(row => row.url);
+    res.json(urls);
+  } catch (err) {
+    console.error('Error fetching links:', err);
+    res.status(500).send('Server error');
+  }
 });
 
-// Add a new link (shared)
-app.post('/links', authenticateToken, (req, res) => {
+// Add a new link (shared, public)
+app.post('/links', authenticateToken, async (req, res) => {
   let { url } = req.body;
-
   if (!url) return res.status(400).send('Missing URL');
 
   const normalizedUrl = normalizeUrl(url);
-  console.log('Adding link:', normalizedUrl);
 
-  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
-
-  if (!normalizedLinks.includes(normalizedUrl)) {
-    sharedLinks.push(normalizedUrl);
-    saveLinks();
-    console.log('Link added and saved.');
-  } else {
-    console.log('Link already exists, not adding.');
+  try {
+    await pool.query(
+      'INSERT INTO links (url) VALUES ($1) ON CONFLICT (url) DO NOTHING',
+      [normalizedUrl]
+    );
+    res.status(201).send('Link added');
+  } catch (err) {
+    console.error('Error adding link:', err);
+    res.status(500).send('Server error');
   }
-
-  res.status(201).send('Link added');
 });
 
-// Delete a link (shared)
-app.delete('/links', authenticateToken, (req, res) => {
+// Delete a link (shared, public)
+app.delete('/links', authenticateToken, async (req, res) => {
   let { url } = req.body;
-
   if (!url) return res.status(400).send('Missing URL');
 
   const normalizedUrl = normalizeUrl(url);
-  console.log('Deleting link:', normalizedUrl);
 
-  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
-  const index = normalizedLinks.indexOf(normalizedUrl);
-
-  if (index === -1) {
-    console.log('Link not found.');
-    return res.status(404).send('Link not found');
+  try {
+    const result = await pool.query('DELETE FROM links WHERE url = $1', [normalizedUrl]);
+    if (result.rowCount === 0) {
+      return res.status(404).send('Link not found');
+    }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Error deleting link:', err);
+    res.status(500).send('Server error');
   }
-
-  sharedLinks.splice(index, 1);
-  saveLinks();
-  console.log('Link deleted and saved.');
-
-  res.sendStatus(200);
 });
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
+
 

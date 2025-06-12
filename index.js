@@ -36,13 +36,10 @@ const users = [
 
 console.log('Users loaded:', users);
 
-// Path to your links.json file
 const LINKS_FILE = path.join(__dirname, 'links.json');
 
-// Shared links array (loaded from links.json)
 let sharedLinks = [];
 
-// Load links from links.json on server start
 function loadLinks() {
   try {
     if (fs.existsSync(LINKS_FILE)) {
@@ -59,7 +56,6 @@ function loadLinks() {
   }
 }
 
-// Save current sharedLinks to links.json
 function saveLinks() {
   try {
     fs.writeFileSync(LINKS_FILE, JSON.stringify(sharedLinks, null, 2), 'utf-8');
@@ -69,10 +65,24 @@ function saveLinks() {
   }
 }
 
-// Load links immediately on startup
+// URL normalization helper
+function normalizeUrl(url) {
+  let normalized = url.trim();
+
+  if (/^www\./i.test(normalized)) {
+    normalized = 'http://' + normalized;
+  } else if (!/^https?:\/\//i.test(normalized)) {
+    normalized = 'http://' + normalized;
+  }
+
+  normalized = normalized.replace(/\/+$/, '');
+  normalized = normalized.toLowerCase();
+
+  return normalized;
+}
+
 loadLinks();
 
-// Middleware to verify JWT
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -86,7 +96,6 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Login route (unchanged)
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -118,32 +127,39 @@ app.post('/login', (req, res) => {
   });
 });
 
-// Get all links (shared)
 app.get('/links', authenticateToken, (req, res) => {
-  res.json(sharedLinks);
+  // Return normalized links
+  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
+  res.json(normalizedLinks);
 });
 
-// Add a new link (shared)
 app.post('/links', authenticateToken, (req, res) => {
-  const { url } = req.body;
+  let { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
-  if (!sharedLinks.includes(url)) {
-    sharedLinks.push(url);
+  const normalizedUrl = normalizeUrl(url);
+
+  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
+
+  if (!normalizedLinks.includes(normalizedUrl)) {
+    sharedLinks.push(normalizedUrl);
     saveLinks();
   }
 
   res.status(201).send('Link added');
 });
 
-// Delete a link (shared)
 app.delete('/links', authenticateToken, (req, res) => {
-  const { url } = req.body;
+  let { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
-  const index = sharedLinks.indexOf(url);
+  const normalizedUrl = normalizeUrl(url);
+
+  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
+  const index = normalizedLinks.indexOf(normalizedUrl);
+
   if (index === -1) {
     return res.status(404).send('Link not found');
   }

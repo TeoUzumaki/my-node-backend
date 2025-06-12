@@ -19,6 +19,22 @@ app.get('/', (req, res) => {
   res.send('Server is up and running!');
 });
 
+// Normalize URLs to ensure consistent storage & comparison
+function normalizeUrl(url) {
+  let normalized = url.trim();
+
+  // Add protocol if missing
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = 'http://' + normalized;
+  }
+
+  // Remove trailing slashes for uniformity
+  normalized = normalized.replace(/\/+$/, '');
+
+  return normalized.toLowerCase();
+}
+
+// Users loaded from environment variables, passwords hashed at startup
 const users = [
   {
     username: process.env.USER_1_USERNAME,
@@ -34,12 +50,15 @@ const users = [
   }
 ];
 
-console.log('Users loaded:', users);
+console.log('Users loaded:', users.map(u => u.username));
 
+// Path to your links.json file
 const LINKS_FILE = path.join(__dirname, 'links.json');
 
+// Shared links array (loaded from links.json)
 let sharedLinks = [];
 
+// Load links from links.json on server start
 function loadLinks() {
   try {
     if (fs.existsSync(LINKS_FILE)) {
@@ -56,33 +75,21 @@ function loadLinks() {
   }
 }
 
+// Save current sharedLinks to links.json (async with callback to catch errors)
 function saveLinks() {
-  try {
-    fs.writeFileSync(LINKS_FILE, JSON.stringify(sharedLinks, null, 2), 'utf-8');
-    console.log('links.json saved');
-  } catch (err) {
-    console.error('Error saving links.json:', err);
-  }
+  fs.writeFile(LINKS_FILE, JSON.stringify(sharedLinks, null, 2), 'utf-8', (err) => {
+    if (err) {
+      console.error('Error saving links.json:', err);
+    } else {
+      console.log('links.json saved successfully');
+    }
+  });
 }
 
-// URL normalization helper
-function normalizeUrl(url) {
-  let normalized = url.trim();
-
-  if (/^www\./i.test(normalized)) {
-    normalized = 'http://' + normalized;
-  } else if (!/^https?:\/\//i.test(normalized)) {
-    normalized = 'http://' + normalized;
-  }
-
-  normalized = normalized.replace(/\/+$/, '');
-  normalized = normalized.toLowerCase();
-
-  return normalized;
-}
-
+// Load links immediately on startup
 loadLinks();
 
+// Middleware to verify JWT
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -96,6 +103,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// Login route
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
@@ -104,7 +112,7 @@ app.post('/login', (req, res) => {
   }
 
   const user = users.find(u => u.username === username);
-  console.log("User found:", user);
+  console.log("User found:", user ? username : null);
 
   if (!user) {
     return res.status(401).send('Invalid username or password');
@@ -127,45 +135,53 @@ app.post('/login', (req, res) => {
   });
 });
 
+// Get all links (shared)
 app.get('/links', authenticateToken, (req, res) => {
-  // Return normalized links
-  const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
-  res.json(normalizedLinks);
+  res.json(sharedLinks);
 });
 
+// Add a new link (shared)
 app.post('/links', authenticateToken, (req, res) => {
   let { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
   const normalizedUrl = normalizeUrl(url);
+  console.log('Adding link:', normalizedUrl);
 
   const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
 
   if (!normalizedLinks.includes(normalizedUrl)) {
     sharedLinks.push(normalizedUrl);
     saveLinks();
+    console.log('Link added and saved.');
+  } else {
+    console.log('Link already exists, not adding.');
   }
 
   res.status(201).send('Link added');
 });
 
+// Delete a link (shared)
 app.delete('/links', authenticateToken, (req, res) => {
   let { url } = req.body;
 
   if (!url) return res.status(400).send('Missing URL');
 
   const normalizedUrl = normalizeUrl(url);
+  console.log('Deleting link:', normalizedUrl);
 
   const normalizedLinks = sharedLinks.map(link => normalizeUrl(link));
   const index = normalizedLinks.indexOf(normalizedUrl);
 
   if (index === -1) {
+    console.log('Link not found.');
     return res.status(404).send('Link not found');
   }
 
   sharedLinks.splice(index, 1);
   saveLinks();
+  console.log('Link deleted and saved.');
 
   res.sendStatus(200);
 });

@@ -154,6 +154,11 @@ app.delete('/links', authenticateToken, async (req, res) => {
   }
 });
 
+// Health check route for frontend server status detection
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });

@@ -16,9 +16,31 @@ app.use(cors());
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
+app.get('/', (req, res) => {
+  res.send('Server is up and running!');
+});
+
+// Normalize URLs to ensure consistent storage & comparison
+function normalizeUrl(url) {
+  let normalized = url.trim();
+
+  // Add protocol if missing
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = 'http://' + normalized;
+  }
+
+  // Remove trailing slashes for uniformity
+  normalized = normalized.replace(/\/+$/, '');
+
+  return normalized.toLowerCase();
+}
+
+// Users loaded from environment variables, passwords hashed at startup
 const users = [
   {
     username: process.env.USER_1_USERNAME,
@@ -34,10 +56,15 @@ const users = [
   }
 ];
 
+console.log('Users loaded:', users.map(u => u.username));
+
+// Middleware to verify JWT
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
+
   if (!token) return res.sendStatus(401);
+
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
@@ -45,73 +72,89 @@ function authenticateToken(req, res, next) {
   });
 }
 
-app.get('/', (req, res) => {
-  res.send('Server is up and running!');
-});
-
+// Login route
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).send('Username and password are required');
+  }
+
   const user = users.find(u => u.username === username);
-  if (!user) return res.status(401).send('Invalid username or password');
-  bcrypt.compare(password, user.passwordHash, (err, match) => {
-    if (!match) return res.status(401).send('Invalid username or password');
+  console.log("User found:", user ? username : null);
+
+  if (!user) {
+    return res.status(401).send('Invalid username or password');
+  }
+
+  bcrypt.compare(password, user.passwordHash, (err, passwordMatch) => {
+    if (err) {
+      return res.status(500).send('Error processing password');
+    }
+
+    console.log("Password match:", passwordMatch);
+
+    if (!passwordMatch) {
+      return res.status(401).send('Invalid username or password');
+    }
+
     const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
+
     res.json({ token });
   });
 });
 
-// 🔗 Link Routes
+// Get all links (shared, public)
 app.get('/links', authenticateToken, async (req, res) => {
-  const result = await pool.query('SELECT url FROM links ORDER BY created_at DESC');
-  res.json(result.rows.map(r => r.url));
+  try {
+    const result = await pool.query('SELECT url FROM links ORDER BY created_at DESC');
+    const urls = result.rows.map(row => row.url);
+    res.json(urls);
+  } catch (err) {
+    console.error('Error fetching links:', err);
+    res.status(500).send('Server error');
+  }
 });
 
+// Add a new link (shared, public)
 app.post('/links', authenticateToken, async (req, res) => {
-  const url = req.body.url?.trim();
+  let { url } = req.body;
   if (!url) return res.status(400).send('Missing URL');
-  const normalized = url.toLowerCase().replace(/\/+$/, '');
-  await pool.query('INSERT INTO links (url) VALUES ($1) ON CONFLICT (url) DO NOTHING', [normalized]);
-  res.status(201).send('Link added');
+
+  const normalizedUrl = normalizeUrl(url);
+
+  try {
+    await pool.query(
+      'INSERT INTO links (url) VALUES ($1) ON CONFLICT (url) DO NOTHING',
+      [normalizedUrl]
+    );
+    res.status(201).send('Link added');
+  } catch (err) {
+    console.error('Error adding link:', err);
+    res.status(500).send('Server error');
+  }
 });
 
+// Delete a link (shared, public)
 app.delete('/links', authenticateToken, async (req, res) => {
-  const url = req.body.url?.trim().toLowerCase().replace(/\/+$/, '');
-  const result = await pool.query('DELETE FROM links WHERE url = $1', [url]);
-  if (result.rowCount === 0) return res.status(404).send('Link not found');
-  res.sendStatus(200);
+  let { url } = req.body;
+  if (!url) return res.status(400).send('Missing URL');
+
+  const normalizedUrl = normalizeUrl(url);
+
+  try {
+    const result = await pool.query('DELETE FROM links WHERE url = $1', [normalizedUrl]);
+    if (result.rowCount === 0) {
+      return res.status(404).send('Link not found');
+    }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Error deleting link:', err);
+    res.status(500).send('Server error');
+  }
 });
 
-// 🧵 Message Board Routes
-app.get('/messages', async (req, res) => {
-  const sort = req.query.sort === 'oldest' ? 'ASC' : 'DESC';
-  const result = await pool.query(
-    `SELECT * FROM messages ORDER BY created_at ${sort}`
-  );
-  res.json(result.rows);
-});
-
-app.post('/messages', async (req, res) => {
-  const { content, parent_id = null } = req.body;
-  if (!content) return res.status(400).send('Missing content');
-  await pool.query(
-    'INSERT INTO messages (content, parent_id) VALUES ($1, $2)',
-    [content, parent_id]
-  );
-  res.status(201).send('Message posted');
-});
-
-app.post('/messages/:id/like', async (req, res) => {
-  const { id } = req.params;
-  await pool.query('UPDATE messages SET likes = likes + 1 WHERE id = $1', [id]);
-  res.sendStatus(200);
-});
-
-app.delete('/messages/:id', async (req, res) => {
-  const { id } = req.params;
-  await pool.query('DELETE FROM messages WHERE id = $1 OR parent_id = $1', [id]);
-  res.sendStatus(200);
-});
-
+// Health check route for frontend server status detection
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
@@ -119,6 +162,5 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
-
 
 

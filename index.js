@@ -99,9 +99,12 @@ app.post('/login', (req, res) => {
 
     const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
 
-    // Send email notification
+    // Get IP address
+    const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ip = rawIp?.replace(/^.*:/, ''); // Removes IPv6 prefix if present
+
     const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
-    sendLoginNotification(username, timestamp);
+    sendLoginNotification(username, timestamp, ip);
 
     res.json({ token });
   });

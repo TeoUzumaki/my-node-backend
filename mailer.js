@@ -9,12 +9,12 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-function sendLoginNotification(username, timestamp) {
+function sendLoginNotification(username, timestamp, ip) {
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: process.env.EMAIL_TO,
     subject: `🔐 Login Alert: ${username}`,
-    text: `User "${username}" logged in at ${timestamp}`
+    text: `User "${username}" logged in at ${timestamp} from IP: ${ip}`
   };
 
   transporter.sendMail(mailOptions, (error, info) => {

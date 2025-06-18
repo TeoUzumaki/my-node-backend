@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const { Pool } = require('pg');
+const sendLoginNotification = require('./mailer'); // Email notification module
 
 dotenv.config();
 
@@ -92,13 +93,15 @@ app.post('/login', (req, res) => {
       return res.status(500).send('Error processing password');
     }
 
-    console.log("Password match:", passwordMatch);
-
     if (!passwordMatch) {
       return res.status(401).send('Invalid username or password');
     }
 
     const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '1h' });
+
+    // Send email notification
+    const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
+    sendLoginNotification(username, timestamp);
 
     res.json({ token });
   });
@@ -162,5 +165,3 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
-
-

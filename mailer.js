@@ -2,21 +2,17 @@ const nodemailer = require('nodemailer');
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-// ✅ Use SendGrid SMTP instead of Gmail
 const transporter = nodemailer.createTransport({
-  host: 'smtp.sendgrid.net',
-  port: 587,
+  service: 'gmail',
   auth: {
-    user: 'apikey', // <-- literally the word "apikey"
-    pass: process.env.SENDGRID_API_KEY // from SendGrid dashboard
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
 async function sendLoginNotification(username, timestamp, ipRaw) {
   const ipList = ipRaw.split(',').map(ip => ip.trim());
-  const publicIp = ipList.find(
-    ip => !ip.startsWith('10.') && !ip.startsWith('172.') && !ip.startsWith('192.168')
-  );
+  const publicIp = ipList.find(ip => !ip.startsWith('10.') && !ip.startsWith('172.') && !ip.startsWith('192.168'));
 
   let locationInfo = 'unknown location';
 
@@ -34,23 +30,20 @@ async function sendLoginNotification(username, timestamp, ipRaw) {
   }
 
   const mailOptions = {
-    from: process.env.EMAIL_FROM, // must be a verified sender in SendGrid
-    to: process.env.EMAIL_TO,     // your destination inbox
+    from: process.env.EMAIL_USER,
+    to: process.env.EMAIL_TO,
     subject: `🔐 Login Alert: ${username}`,
-    text: `User "${username}" logged in at ${timestamp}
-IP: ${publicIp || ipRaw}
-Location: ${locationInfo}`
+    text: `User "${username}" logged in at ${timestamp}\nIP: ${publicIp || ipRaw}\nLocation: ${locationInfo}`
   };
 
-  try {
-    let info = await transporter.sendMail(mailOptions);
-    console.log('📧 Email sent:', info.response || info.messageId);
-  } catch (error) {
-    console.error('❌ Email failed to send:', error);
-  }
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      console.error('❌ Email failed to send:', error);
+    } else {
+      console.log('📧 Email sent:', info.response);
+    }
+  });
 }
 
 module.exports = sendLoginNotification;
-
-
 

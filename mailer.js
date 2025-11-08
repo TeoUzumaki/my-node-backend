@@ -19,10 +19,22 @@ async function sendLoginNotification(username, timestamp, ipRaw) {
   if (publicIp) {
     try {
       const response = await fetch(`http://ip-api.com/json/${publicIp}`);
-      const data = await response.json();
 
-      if (data.status === 'success') {
-        locationInfo = `${data.city}, ${data.regionName}, ${data.country} (ISP: ${data.isp})`;
+      // Ensure the response is valid JSON before parsing
+      if (response.ok) {
+        const text = await response.text();
+        try {
+          const data = JSON.parse(text);
+          if (data && data.status === 'success') {
+            locationInfo = `${data.city}, ${data.regionName}, ${data.country} (ISP: ${data.isp})`;
+          } else {
+            console.warn(`⚠️ IP lookup failed for ${publicIp}:`, data?.message || 'No data returned');
+          }
+        } catch (parseError) {
+          console.error(`⚠️ Failed to parse IP lookup response for ${publicIp}:`, parseError.message);
+        }
+      } else {
+        console.warn(`⚠️ IP lookup HTTP error: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('🌐 Failed to fetch IP location:', error.message);
@@ -46,4 +58,3 @@ async function sendLoginNotification(username, timestamp, ipRaw) {
 }
 
 module.exports = sendLoginNotification;
-

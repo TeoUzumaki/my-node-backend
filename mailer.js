@@ -1,41 +1,22 @@
-const https = require('https');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
-// Helper function to fetch IP location from ipapi.co
-function lookupIp(ipRaw) {
-  return new Promise((resolve) => {
-    const options = {
-      host: 'ipapi.co',
-      port: 443,
-      path: `/${ipRaw}/json/`,
-      headers: { 'User-Agent': 'nodejs-ipapi-v1.02' }
-    };
+// Helper function to lookup IP location using ipwho.is
+async function lookupIp(ipRaw) {
+  try {
+    const res = await fetch(`https://ipwho.is/${ipRaw}`);
+    const data = await res.json();
 
-    https.get(options, (resp) => {
-      let body = '';
-
-      resp.on('data', (chunk) => {
-        body += chunk;
-      });
-
-      resp.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          if (data && data.city) {
-            resolve(`${data.city}, ${data.region}, ${data.country_name} (ISP: ${data.org || 'Unknown ISP'})`);
-          } else {
-            resolve('Unknown location');
-          }
-        } catch (err) {
-          console.error('⚠️ Failed to parse IP data:', err.message);
-          resolve('Unknown location');
-        }
-      });
-    }).on('error', (err) => {
-      console.error('⚠️ IP lookup request failed:', err.message);
-      resolve('Unknown location');
-    });
-  });
+    if (data.success) {
+      return `${data.city}, ${data.region}, ${data.country} (ISP: ${data.connection?.isp || 'Unknown ISP'})`;
+    } else {
+      console.warn(`⚠️ IP lookup failed for ${ipRaw}: ${data.message || 'Unknown error'}`);
+      return 'Unknown location';
+    }
+  } catch (err) {
+    console.warn(`⚠️ IP lookup request failed for ${ipRaw}: ${err.message}`);
+    return 'Unknown location';
+  }
 }
 
 async function sendLoginNotification(username, timestamp, ipRaw) {
@@ -80,5 +61,3 @@ async function sendLoginNotification(username, timestamp, ipRaw) {
 }
 
 module.exports = sendLoginNotification;
-
-

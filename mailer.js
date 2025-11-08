@@ -1,16 +1,17 @@
 const fetch = require('node-fetch');
 require('dotenv').config();
 
-// Helper function to lookup IP location using ipwho.is
+// Helper function to lookup IP location using ipinfo.io
 async function lookupIp(ipRaw) {
   try {
-    const res = await fetch(`https://ipwho.is/${ipRaw}`);
+    const tokenPart = process.env.IPINFO_TOKEN ? `?token=${process.env.IPINFO_TOKEN}` : '';
+    const res = await fetch(`https://ipinfo.io/${ipRaw}/json${tokenPart}`);
     const data = await res.json();
 
-    if (data.success) {
-      return `${data.city}, ${data.region}, ${data.country} (ISP: ${data.connection?.isp || 'Unknown ISP'})`;
+    if (data && data.city) {
+      return `${data.city}, ${data.region}, ${data.country} (ISP: ${data.org || 'Unknown ISP'})`;
     } else {
-      console.warn(`⚠️ IP lookup failed for ${ipRaw}: ${data.message || 'Unknown error'}`);
+      console.warn(`⚠️ IP lookup failed for ${ipRaw}: No city in response`);
       return 'Unknown location';
     }
   } catch (err) {

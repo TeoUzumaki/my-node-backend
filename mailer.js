@@ -2,28 +2,34 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 async function sendLoginNotification(username, timestamp, ipRaw) {
+  // Handle multiple IPs (e.g., from proxies)
   const ipList = ipRaw.split(',').map(ip => ip.trim());
   const publicIp = ipList.find(ip => !ip.startsWith('10.') && !ip.startsWith('172.') && !ip.startsWith('192.168'));
 
   let locationInfo = 'unknown location';
 
+  // Fetch IP location (with error handling)
   if (publicIp) {
     try {
       const response = await fetch(`https://ipwho.is/${publicIp}`);
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          locationInfo = `${data.city}, ${data.region}, ${data.country} (ISP: ${data.connection.isp})`;
+          locationInfo = `${data.city}, ${data.region}, ${data.country} (ISP: ${data.connection?.isp || 'Unknown ISP'})`;
+        } else {
+          console.warn(`⚠️ IP lookup failed for ${publicIp}: ${data.message}`);
         }
+      } else {
+        console.warn(`⚠️ IP lookup HTTP error: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('🌐 Failed to fetch IP location:', error.message);
     }
   }
 
-  // Construct email content
+  // Build the email content
   const emailData = {
-    from: process.env.EMAIL_USER, // e.g. "Your App <you@yourdomain.com>"
+    from: "Login Bot <onboarding@resend.dev>", // Safe default sender
     to: process.env.EMAIL_TO,
     subject: `🔐 Login Alert: ${username}`,
     text: `User "${username}" logged in at ${timestamp}\nIP: ${publicIp || ipRaw}\nLocation: ${locationInfo}`
